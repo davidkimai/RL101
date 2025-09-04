@@ -173,4 +173,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines, security requ
 
 ---
 
-*This course bridges 500+ research papers into practical, secure, production-ready implementations. Start with the Quick Start demo above, then proceed to Module
+*This course bridges 500+ research papers into practical, secure, production-ready implementations. Start with the Quick Start demo above, then proceed to Module 1*
