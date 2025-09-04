@@ -3,7 +3,7 @@
 A pragmatic, hands-on course transforming Large Language Models from passive sequence generators into autonomous decision-making agents. Based on "The Landscape of Agentic Reinforcement Learning for LLMs: A Survey" (arXiv:2509.02547), this course bridges theory to implementation with runnable code, practical examples, and industry-standard security practices.
 
 ##  Key Takeaways
-- **Paradigm Shift**: From single-step preference tuning (PBRFT) to multi-step agent training (Agentic RL)
+- **Paradigm Shift**: From single-step preference-based reinforcement fine-tuning (PBRFT) to multi-step agent training (Agentic RL)
 - **Technical Foundation**: POMDP formalism enables planning, tool use, memory, and self-improvement
 - **Practical Focus**: Every concept includes runnable implementation and evaluation benchmarks
 - **Security-First**: Zero-trust architecture with secure-by-design patterns throughout
