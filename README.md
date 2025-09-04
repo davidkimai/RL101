@@ -1,4 +1,4 @@
-# RL101: Reinforcement Learning 101 — Agentic RL for LLMs
+# RL101: Reinforcement Learning 101
 
 This repository provides a comprehensive, hands-on course transforming LLMs from passive text generators into autonomous agents through reinforcement learning. Based on "The Landscape of Agentic Reinforcement Learning for LLMs" survey, it bridges theory to implementation across planning, tool use, memory, reasoning, self-improvement, and perception capabilities.
 
