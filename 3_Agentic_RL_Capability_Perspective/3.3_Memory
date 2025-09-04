@@ -1,0 +1,774 @@
+# 3.3 Memory
+
+Memory transforms from static storage into controllable subsystems where RL policies decide when to retrieve, write, or forget information. Approaches include RL-guided RAG optimization, explicit token memories managed by learned policies, and latent memory states that persist across contexts, enabling adaptive information management.
+
+## Key Takeaways
+- **Memory as Policy**: Storage and retrieval become learned behaviors rather than fixed operations
+- **Multi-Level Architecture**: Working memory, episodic memory, and long-term knowledge integration
+- **RL-Guided RAG**: Retrieval policies optimize what information to fetch and when
+- **Adaptive Forgetting**: Policies learn what to retain vs discard based on utility and capacity
+
+## Prerequisites Check
+
+```bash
+# Verify memory and retrieval libraries
+python -c "import numpy as np, faiss; print('Vector similarity search ready')"
+python -c "import torch, transformers; print('Embedding models ready')"
+python -c "import json, sqlite3; print('Storage backends ready')"
+
+# Conceptual check
+echo "Do you understand vector embeddings and similarity search?"
+echo "Are you familiar with RAG (Retrieval-Augmented Generation)?"
+echo "Have you completed Module 3.2 (Tool Using)?"
+```
+
+## Hands-On: Memory System Evolution
+
+### Traditional Static Memory
+```python
+import json
+import time
+import sqlite3
+from typing import Dict, List, Any, Optional, Tuple
+from dataclasses import dataclass
+import numpy as np
+
+@dataclass
+class MemoryItem:
+    content: str
+    timestamp: float
+    importance: float
+    access_count: int = 0
+    
+class StaticMemorySystem:
+    """Traditional static memory with fixed storage/retrieval rules"""
+    
+    def __init__(self, max_items: int = 100):
+        self.memories = []
+        self.max_items = max_items
+        self.storage_rules = {
+            'importance_threshold': 0.5,
+            'recency_weight': 0.3,
+            'frequency_weight': 0.2
+        }
+    
+    def store(self, content: str, importance: float = 0.5) -> bool:
+        """Fixed rule-based storage"""
+        # Rule 1: Only store if above importance threshold
+        if importance < self.storage_rules['importance_threshold']:
+            return False
+        
+        # Rule 2: If at capacity, remove least important
+        if len(self.memories) >= self.max_items:
+            self.memories.sort(key=lambda x: x.importance)
+            self.memories.pop(0)  # Remove least important
+        
+        # Store new memory
+        memory = MemoryItem(content, time.time(), importance)
+        self.memories.append(memory)
+        return True
+    
+    def retrieve(self, query: str, top_k: int = 5) -> List[MemoryItem]:
+        """Fixed rule-based retrieval"""
+        # Simple keyword matching
+        relevant_memories = []
+        query_words = set(query.lower().split())
+        
+        for memory in self.memories:
+            content_words = set(memory.content.lower().split())
+            overlap = len(query_words.intersection(content_words))
+            
+            if overlap > 0:
+                # Fixed scoring formula
+                recency_score = 1.0 / (1.0 + (time.time() - memory.timestamp) / 3600)  # Decay over hours
+                frequency_score = min(memory.access_count / 10.0, 1.0)
+                relevance_score = overlap / len(query_words)
+                
+                final_score = (
+                    relevance_score * 0.5 +
+                    recency_score * self.storage_rules['recency_weight'] +
+                    frequency_score * self.storage_rules['frequency_weight']
+                )
+                
+                relevant_memories.append((memory, final_score))
+                memory.access_count += 1
+        
+        # Sort by score and return top_k
+        relevant_memories.sort(key=lambda x: x[1], reverse=True)
+        return [mem for mem, score in relevant_memories[:top_k]]
+
+# Demo static memory
+static_memory = StaticMemorySystem()
+
+# Store some memories
+memories_to_store = [
+    ("Python is a programming language", 0.7),
+    ("The user prefers detailed explanations", 0.9),
+    ("Meeting scheduled for 2pm today", 0.6),
+    ("Last calculation result was 42", 0.4),
+    ("User is working on machine learning project", 0.8)
+]
+
+print("=== Static Memory System ===")
+for content, importance in memories_to_store:
+    stored = static_memory.store(content, importance)
+    print(f"Stored: '{content[:30]}...' (importance: {importance}) -> {stored}")
+
+# Retrieve memories
+queries = ["python programming", "user preferences", "calculation"]
+for query in queries:
+    retrieved = static_memory.retrieve(query, top_k=2)
+    print(f"\nQuery: '{query}' -> {len(retrieved)} memories")
+    for mem in retrieved:
+        print(f"  - {mem.content[:40]}... (importance: {mem.importance})")
+```
+
+### RL-Controlled Memory System
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from collections import deque
+
+class MemoryPolicy(nn.Module):
+    """Neural policy for memory management decisions"""
+    
+    def __init__(self, content_dim: int = 128, context_dim: int = 64):
+        super().__init__()
+        
+        # Content encoder
+        self.content_encoder = nn.Sequential(
+            nn.Linear(content_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32)
+        )
+        
+        # Context encoder  
+        self.context_encoder = nn.Sequential(
+            nn.Linear(context_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, 16)
+        )
+        
+        # Decision heads
+        self.store_head = nn.Linear(32 + 16, 2)  # store/don't store
+        self.retrieve_head = nn.Linear(32 + 16, 1)  # retrieval relevance
+        self.forget_head = nn.Linear(32 + 16, 2)  # keep/forget
+        
+    def forward(self, content_features: torch.Tensor, context_features: torch.Tensor):
+        content_encoded = self.content_encoder(content_features)
+        context_encoded = self.context_encoder(context_features)
+        
+        combined = torch.cat([content_encoded, context_encoded], dim=-1)
+        
+        store_logits = self.store_head(combined)
+        retrieve_score = self.retrieve_head(combined)
+        forget_logits = self.forget_head(combined)
+        
+        return store_logits, retrieve_score, forget_logits
+
+class RLMemorySystem:
+    """RL-controlled adaptive memory system"""
+    
+    def __init__(self, max_items: int = 100):
+        self.policy = MemoryPolicy()
+        self.optimizer = optim.Adam(self.policy.parameters(), lr=0.001)
+        
+        self.memories = []
+        self.max_items = max_items
+        
+        # Experience buffer for training
+        self.experience_buffer = deque(maxlen=1000)
+        
+        # Memory performance tracking
+        self.retrieval_success_rate = 0.5
+        self.storage_efficiency = 0.5
+        
+    def encode_content(self, content: str) -> torch.Tensor:
+        """Encode content to feature vector (simplified)"""
+        # In practice: use sentence embeddings
+        words = content.lower().split()
+        features = np.zeros(128)
+        
+        # Simple bag-of-words encoding
+        for i, word in enumerate(words[:10]):  # Max 10 words
+            word_hash = abs(hash(word)) % 128
+            features[word_hash] += 1.0
+            
+        return torch.tensor(features, dtype=torch.float32)
+    
+    def encode_context(self, query: str = "", current_task: str = "", 
+                      user_state: Dict = None) -> torch.Tensor:
+        """Encode current context for memory decisions"""
+        context = np.zeros(64)
+        
+        # Query features
+        if query:
+            query_words = len(query.split())
+            context[0] = min(query_words / 20.0, 1.0)
+            context[1] = 1.0 if any(word in query.lower() for word in ['calculate', 'math']) else 0.0
+            context[2] = 1.0 if any(word in query.lower() for word in ['remember', 'recall']) else 0.0
+        
+        # Task features
+        if current_task:
+            context[3] = 1.0 if 'urgent' in current_task.lower() else 0.0
+            context[4] = 1.0 if 'important' in current_task.lower() else 0.0
+        
+        # User state features
+        if user_state:
+            context[5] = user_state.get('engagement_level', 0.5)
+            context[6] = user_state.get('expertise_level', 0.5)
+            context[7] = user_state.get('time_pressure', 0.5)
+        
+        return torch.tensor(context, dtype=torch.float32)
+    
+    def should_store(self, content: str, context: Dict) -> Tuple[bool, float]:
+        """RL-based decision on whether to store content"""
+        content_features = self.encode_content(content)
+        context_features = self.encode_context(**context)
+        
+        with torch.no_grad():
+            store_logits, _, _ = self.policy(content_features.unsqueeze(0), 
+                                           context_features.unsqueeze(0))
+            store_probs = torch.softmax(store_logits, dim=-1)
+            
+        should_store = store_probs[0, 1].item() > 0.5  # Store if prob > 0.5
+        confidence = store_probs[0, 1].item()
+        
+        return should_store, confidence
+    
+    def adaptive_store(self, content: str, context: Dict = None) -> bool:
+        """Store memory using learned policy"""
+        if context is None:
+            context = {}
+            
+        should_store, confidence = self.should_store(content, context)
+        
+        if not should_store:
+            return False
+        
+        # If at capacity, use learned forgetting policy
+        if len(self.memories) >= self.max_items:
+            self.adaptive_forget()
+        
+        # Store memory with metadata
+        memory = MemoryItem(
+            content=content,
+            timestamp=time.time(),
+            importance=confidence,
+            access_count=0
+        )
+        self.memories.append(memory)
+        
+        return True
+    
+    def adaptive_retrieve(self, query: str, context: Dict = None, top_k: int = 5) -> List[MemoryItem]:
+        """Retrieve memories using learned relevance scoring"""
+        if context is None:
+            context = {}
+        if not self.memories:
+            return []
+        
+        query_features = self.encode_content(query)
+        context_features = self.encode_context(query=query, **context)
+        
+        scored_memories = []
+        
+        for memory in self.memories:
+            memory_features = self.encode_content(memory.content)
+            
+            with torch.no_grad():
+                _, retrieve_score, _ = self.policy(memory_features.unsqueeze(0),
+                                                 context_features.unsqueeze(0))
+                
+            relevance = retrieve_score[0].item()
+            
+            # Combine with recency and access patterns
+            recency_bonus = 1.0 / (1.0 + (time.time() - memory.timestamp) / 3600)
+            access_bonus = min(memory.access_count / 10.0, 0.5)
+            
+            final_score = relevance + 0.1 * recency_bonus + 0.1 * access_bonus
+            scored_memories.append((memory, final_score))
+            
+            memory.access_count += 1
+        
+        # Return top_k memories
+        scored_memories.sort(key=lambda x: x[1], reverse=True)
+        return [mem for mem, score in scored_memories[:top_k]]
+    
+    def adaptive_forget(self) -> int:
+        """Use learned policy to decide what to forget"""
+        if not self.memories:
+            return 0
+            
+        forgotten_count = 0
+        memories_to_keep = []
+        
+        for memory in self.memories:
+            memory_features = self.encode_content(memory.content)
+            context_features = self.encode_context()  # Current context
+            
+            with torch.no_grad():
+                _, _, forget_logits = self.policy(memory_features.unsqueeze(0),
+                                                context_features.unsqueeze(0))
+                forget_probs = torch.softmax(forget_logits, dim=-1)
+                
+            should_keep = forget_probs[0, 0].item() > 0.5  # Keep if prob > 0.5
+            
+            if should_keep:
+                memories_to_keep.append(memory)
+            else:
+                forgotten_count += 1
+        
+        self.memories = memories_to_keep
+        return forgotten_count
+    
+    def train_memory_policy(self, experiences: List[Dict]) -> float:
+        """Train memory management policy using RL"""
+        if len(experiences) < 5:
+            return 0.0
+        
+        # Prepare training data
+        states = []
+        actions = []
+        rewards = []
+        
+        for exp in experiences:
+            content_features = self.encode_content(exp['content'])
+            context_features = self.encode_context(**exp.get('context', {}))
+            
+            states.append((content_features, context_features))
+            actions.append(exp['action'])  # 0: don't store, 1: store
+            rewards.append(exp['reward'])
+        
+        # Convert to tensors
+        content_batch = torch.stack([s[0] for s in states])
+        context_batch = torch.stack([s[1] for s in states])
+        actions = torch.tensor(actions, dtype=torch.long)
+        rewards = torch.tensor(rewards, dtype=torch.float32)
+        
+        # Forward pass
+        store_logits, _, _ = self.policy(content_batch, context_batch)
+        
+        # Compute loss (policy gradient)
+        log_probs = torch.log_softmax(store_logits, dim=-1)
+        selected_log_probs = log_probs.gather(1, actions.unsqueeze(1)).squeeze()
+        
+        loss = -(selected_log_probs * rewards).mean()
+        
+        # Update policy
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        
+        return loss.item()
+
+# Demo RL memory system
+rl_memory = RLMemorySystem()
+
+print("\n=== RL-Controlled Memory System ===")
+
+# Test storage with different contexts
+storage_tests = [
+    ("Python list comprehensions are efficient", {'current_task': 'urgent programming help'}),
+    ("User prefers concise explanations", {'user_state': {'engagement_level': 0.9}}),
+    ("Weather is sunny today", {'current_task': 'casual conversation'}),
+    ("Algorithm complexity is O(n log n)", {'current_task': 'important technical discussion'}),
+    ("Coffee meeting at 3pm", {'user_state': {'time_pressure': 0.8}})
+]
+
+for content, context in storage_tests:
+    stored = rl_memory.adaptive_store(content, context)
+    print(f"Stored: '{content[:40]}...' -> {stored}")
+
+print(f"Total memories stored: {len(rl_memory.memories)}")
+
+# Test retrieval
+retrieval_tests = [
+    ("python programming help", {'current_task': 'coding assistance'}),
+    ("user communication style", {'current_task': 'response optimization'}),
+    ("algorithm performance", {'current_task': 'technical discussion'})
+]
+
+for query, context in retrieval_tests:
+    retrieved = rl_memory.adaptive_retrieve(query, context, top_k=2)
+    print(f"\nQuery: '{query}' -> {len(retrieved)} memories")
+    for mem in retrieved:
+        print(f"  - {mem.content[:50]}...")
+```
+
+## Memory Integration Patterns
+
+### Working Memory + Long-Term Memory
+```python
+class HierarchicalMemorySystem:
+    """Multi-level memory with working and long-term storage"""
+    
+    def __init__(self, working_capacity: int = 7, longterm_capacity: int = 1000):
+        # Working memory (fast, limited capacity)
+        self.working_memory = RLMemorySystem(max_items=working_capacity)
+        
+        # Long-term memory (slower, large capacity)  
+        self.longterm_memory = RLMemorySystem(max_items=longterm_capacity)
+        
+        # Memory consolidation policy
+        self.consolidation_threshold = 3  # Access count threshold
+        
+    def store(self, content: str, context: Dict = None) -> str:
+        """Intelligent routing between working and long-term memory"""
+        if context is None:
+            context = {}
+            
+        # Determine storage location based on content and context
+        urgency = context.get('urgency', 0.5)
+        importance = context.get('importance', 0.5)
+        
+        if urgency > 0.7:  # Urgent information goes to working memory
+            stored = self.working_memory.adaptive_store(content, context)
+            return "working_memory" if stored else "rejected"
+        elif importance > 0.8:  # Important information goes to long-term
+            stored = self.longterm_memory.adaptive_store(content, context)
+            return "longterm_memory" if stored else "rejected"
+        else:
+            # Try working memory first, then long-term
+            if self.working_memory.adaptive_store(content, context):
+                return "working_memory"
+            elif self.longterm_memory.adaptive_store(content, context):
+                return "longterm_memory"
+            else:
+                return "rejected"
+    
+    def retrieve(self, query: str, context: Dict = None, top_k: int = 5) -> Dict[str, List]:
+        """Retrieve from both memory levels"""
+        if context is None:
+            context = {}
+            
+        results = {
+            'working_memory': [],
+            'longterm_memory': [],
+            'consolidated': []
+        }
+        
+        # Search working memory first (faster)
+        working_results = self.working_memory.adaptive_retrieve(query, context, top_k=top_k//2)
+        results['working_memory'] = working_results
+        
+        # Search long-term memory
+        longterm_results = self.longterm_memory.adaptive_retrieve(query, context, top_k=top_k//2)
+        results['longterm_memory'] = longterm_results
+        
+        # Consolidate and rank results
+        all_results = []
+        for mem in working_results:
+            all_results.append(('working', mem))
+        for mem in longterm_results:
+            all_results.append(('longterm', mem))
+            
+        # Sort by relevance (simplified)
+        all_results.sort(key=lambda x: x[1].importance, reverse=True)
+        results['consolidated'] = all_results[:top_k]
+        
+        return results
+    
+    def consolidate_memories(self) -> Dict[str, int]:
+        """Move frequently accessed working memories to long-term storage"""
+        consolidated = 0
+        working_memories = self.working_memory.memories.copy()
+        
+        for memory in working_memories:
+            if memory.access_count >= self.consolidation_threshold:
+                # Move to long-term memory
+                context = {'importance': min(memory.importance + 0.2, 1.0)}
+                if self.longterm_memory.adaptive_store(memory.content, context):
+                    # Remove from working memory
+                    self.working_memory.memories.remove(memory)
+                    consolidated += 1
+        
+        return {
+            'consolidated': consolidated,
+            'working_remaining': len(self.working_memory.memories),
+            'longterm_total': len(self.longterm_memory.memories)
+        }
+
+# Demo hierarchical memory
+hierarchical_memory = HierarchicalMemorySystem()
+
+print("\n=== Hierarchical Memory System ===")
+
+# Store memories with different urgency/importance
+test_memories = [
+    ("Critical bug in production system", {'urgency': 0.9, 'importance': 0.9}),
+    ("User's preferred programming language is Python", {'urgency': 0.3, 'importance': 0.8}),
+    ("Current weather is cloudy", {'urgency': 0.5, 'importance': 0.2}),
+    ("Database connection string", {'urgency': 0.7, 'importance': 0.7}),
+    ("Historical project patterns", {'urgency': 0.2, 'importance': 0.9})
+]
+
+for content, context in test_memories:
+    location = hierarchical_memory.store(content, context)
+    print(f"'{content[:30]}...' -> {location}")
+
+# Test retrieval from both memory levels
+query = "programming preferences"
+results = hierarchical_memory.retrieve(query, top_k=3)
+
+print(f"\nQuery: '{query}'")
+print(f"Working memory results: {len(results['working_memory'])}")
+print(f"Long-term memory results: {len(results['longterm_memory'])}")
+print(f"Consolidated results: {len(results['consolidated'])}")
+
+for source, mem in results['consolidated']:
+    print(f"  - [{source}] {mem.content[:40]}...")
+
+# Test memory consolidation
+consolidation_stats = hierarchical_memory.consolidate_memories()
+print(f"\nConsolidation stats: {consolidation_stats}")
+```
+
+## ASCII Diagram: Memory Architecture Evolution
+
+```
+Traditional Static Memory:
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  Content    │───►│   Fixed     │───►│   Static    │
+│   Input     │    │   Rules     │    │  Storage    │
+└─────────────┘    │Store/Reject │    └─────────────┘
+                   └─────────────┘           │
+                          │                  │
+                   ┌─────────────┐    ┌─────────────┐
+                   │  Keyword    │◄───┤   Fixed     │
+                   │  Matching   │    │ Retrieval   │
+                   └─────────────┘    └─────────────┘
+
+RL-Controlled Memory Architecture:
+┌─────────────────────────────────────────────────────┐
+│                Memory Policy π_mem(a|s,c)           │
+│                                                     │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │
+│  │   Store     │ │  Retrieve   │ │   Forget    │   │
+│  │   Head      │ │    Head     │ │    Head     │   │
+│  └─────────────┘ └─────────────┘ └─────────────┘   │
+└─────────────────────────────────────────────────────┘
+         │                │                │
+         ▼                ▼                ▼
+┌─────────────┐    ┌─────────────┐   ┌─────────────┐
+│  Adaptive   │    │   Learned   │   │ Intelligent │
+│  Storage    │    │  Retrieval  │   │ Forgetting  │
+│ Decisions   │    │  Relevance  │   │ Policies    │
+└─────────────┘    └─────────────┘   └─────────────┘
+
+Hierarchical Memory System:
+┌─────────────────────────────────────────────────────┐
+│                  Query Input                        │
+└─────────────────────────────────────────────────────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+              ▼            ▼            ▼
+      ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+      │  Working    │ │ Long-term   │ │Episodic     │
+      │  Memory     │ │  Memory     │ │ Memory      │
+      │ (Fast/Temp) │ │(Slow/Perm) │ │(Context)    │
+      └─────────────┘ └─────────────┘ └─────────────┘
+              │            │            │
+              └────────────┼────────────┘
+                           ▼
+                  ┌─────────────────┐
+                  │   Consolidation │
+                  │     & Ranking   │
+                  └─────────────────┘
+```
+
+## Memory-RAG Integration
+
+### RL-Optimized RAG System
+```python
+class RLGuidedRAG:
+    """RAG system with RL-optimized retrieval policies"""
+    
+    def __init__(self, memory_system: RLMemorySystem):
+        self.memory = memory_system
+        self.retrieval_policy = nn.Sequential(
+            nn.Linear(128 + 64, 64),  # query + context features
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)  # retrieval utility score
+        )
+        self.rag_optimizer = optim.Adam(self.retrieval_policy.parameters(), lr=0.001)
+        
+    def intelligent_retrieve(self, query: str, context: Dict, 
+                           retrieval_budget: int = 5) -> List[MemoryItem]:
+        """Use RL policy to optimize retrieval decisions"""
+        
+        # Get candidate memories
+        candidates = self.memory.adaptive_retrieve(query, context, top_k=retrieval_budget*2)
+        
+        if not candidates:
+            return []
+        
+        # Score each candidate with RL policy
+        query_features = self.memory.encode_content(query)
+        context_features = self.memory.encode_context(**context)
+        
+        scored_candidates = []
+        
+        for memory in candidates:
+            memory_features = self.memory.encode_content(memory.content)
+            
+            # Combine query and memory features
+            combined_features = torch.cat([query_features, memory_features[:64]])
+            combined_input = torch.cat([combined_features, context_features])
+            
+            with torch.no_grad():
+                utility_score = self.retrieval_policy(combined_input.unsqueeze(0))
+                
+            scored_candidates.append((memory, utility_score.item()))
+        
+        # Select top memories within budget
+        scored_candidates.sort(key=lambda x: x[1], reverse=True)
+        return [mem for mem, score in scored_candidates[:retrieval_budget]]
+    
+    def generate_with_memory(self, query: str, context: Dict = None) -> Dict:
+        """Generate response using memory-augmented context"""
+        if context is None:
+            context = {}
+            
+        # Retrieve relevant memories
+        retrieved_memories = self.intelligent_retrieve(query, context)
+        
+        # Construct augmented prompt
+        memory_context = ""
+        if retrieved_memories:
+            memory_context = "\n\nRelevant context from memory:\n"
+            for i, mem in enumerate(retrieved_memories, 1):
+                memory_context += f"{i}. {mem.content}\n"
+        
+        augmented_query = f"Query: {query}{memory_context}"
+        
+        # Simulate response generation (in practice: use LLM)
+        response = f"Response considering {len(retrieved_memories)} memory items: [Generated response based on query and memory context]"
+        
+        return {
+            'query': query,
+            'response': response,
+            'memories_used': len(retrieved_memories),
+            'memory_content': [mem.content for mem in retrieved_memories],
+            'augmented_prompt_length': len(augmented_query)
+        }
+    
+    def train_retrieval_policy(self, rag_experiences: List[Dict]) -> float:
+        """Train RAG retrieval policy based on response quality"""
+        if len(rag_experiences) < 5:
+            return 0.0
+            
+        total_loss = 0.0
+        
+        for exp in rag_experiences:
+            query_features = self.memory.encode_content(exp['query'])
+            context_features = self.memory.encode_context(**exp.get('context', {}))
+            
+            # Train on each retrieved memory
+            for mem_content, utility_target in exp['memory_utilities']:
+                memory_features = self.memory.encode_content(mem_content)
+                
+                combined_features = torch.cat([query_features, memory_features[:64]])
+                combined_input = torch.cat([combined_features, context_features])
+                
+                # Forward pass
+                predicted_utility = self.retrieval_policy(combined_input.unsqueeze(0))
+                target = torch.tensor([[utility_target]], dtype=torch.float32)
+                
+                # MSE loss
+                loss = nn.MSELoss()(predicted_utility, target)
+                
+                # Backward pass
+                self.rag_optimizer.zero_grad()
+                loss.backward()
+                self.rag_optimizer.step()
+                
+                total_loss += loss.item()
+        
+        return total_loss / len(rag_experiences)
+
+# Demo RAG integration
+rag_system = RLGuidedRAG(rl_memory)
+
+print("\n=== RL-Guided RAG System ===")
+
+# Add some technical memories
+technical_memories = [
+    "Python uses dynamic typing and automatic memory management",
+    "Machine learning requires training data and validation sets", 
+    "REST APIs use HTTP methods like GET, POST, PUT, DELETE",
+    "Database indexing improves query performance but uses storage space"
+]
+
+for mem in technical_memories:
+    rl_memory.adaptive_store(mem, {'importance': 0.8})
+
+# Test RAG generation
+rag_queries = [
+    ("How do I optimize database performance?", {'current_task': 'performance optimization'}),
+    ("What are Python's key features?", {'current_task': 'programming tutorial'}),
+    ("Explain machine learning basics", {'current_task': 'educational content'})
+]
+
+for query, context in rag_queries:
+    result = rag_system.generate_with_memory(query, context)
+    print(f"\nQuery: {query}")
+    print(f"Memories used: {result['memories_used']}")
+    print(f"Response: {result['response'][:80]}...")
+    if result['memory_content']:
+        print("Memory context used:")
+        for mem in result['memory_content']:
+            print(f"  - {mem[:50]}...")
+```
+
+## Key Differences Summary
+
+| Aspect | Static Memory | RL-Controlled Memory |
+|--------|---------------|---------------------|
+| **Storage Decision** | Fixed importance threshold | Learned context-dependent policy |
+| **Retrieval** | Keyword matching | Learned relevance scoring |
+| **Forgetting** | FIFO or importance-based | Intelligent utility-based |
+| **Capacity Management** | Simple overflow handling | Adaptive consolidation |
+| **Context Sensitivity** | Limited rule-based | Full context consideration |
+| **Adaptation** | Manual rule updates | Continuous policy learning |
+
+## Practical Exercises
+
+```python
+# Exercise 1: Implement episodic memory
+def exercise_episodic_memory():
+    """Build episodic memory system for conversation contexts"""
+    pass
+
+# Exercise 2: Design memory compression
+def exercise_memory_compression():
+    """Implement learned compression for efficient storage"""
+    pass
+
+# Exercise 3: Build domain-specific memory
+def exercise_domain_memory():
+    """Create specialized memory system for your application"""
+    pass
+```
+
+## Resources
+
+- **Survey Reference**: [Section 3.3, arXiv:2509.02547](https://arxiv.org/abs/2509.02547)
+- **Memory-Enhanced LLMs**: [MemGPT: Towards LLMs as Operating Systems](https://arxiv.org/abs/2310.08560)
+- **RAG Optimization**: [Self-RAG: Learning to Retrieve, Generate and Critique](https://arxiv.org/abs/2310.11511)
+- **Memory Networks**: [Memory Networks for Language Understanding](https://arxiv.org/abs/1410.3916)
+- **Hierarchical Memory**: [Hierarchical Memory Networks](https://arxiv.org/abs/1605.07427)
+
+## Next Steps
+
+- **[3.4 Self-Improvement](3.4_Self_Improvement.md)**: Learn RL-driven self-correction and autonomous learning
+- **Integration Practice**: Combine memory systems with planning and tool use
+- **Advanced Topics**: Study memory compression, forgetting policies, and episodic memory architectures
+
+---
+
+*Memory becomes intelligent when storage and retrieval decisions are learned rather than programmed. RL enables adaptive information management that considers context, utility, and capacity constraints to optimize for task performance.*
