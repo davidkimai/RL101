@@ -6,7 +6,7 @@ A pragmatic, hands-on course transforming Large Language Models from passive seq
 - **Paradigm Shift**: From single-step preference-based reinforcement fine-tuning (PBRFT) to multi-step agent training (Agentic RL)
 - **Technical Foundation**: Partially observable Markov Decision Process (POMDP) formalism enables planning, tool use, memory, and self-improvement
 - **Practical Focus**: Every concept includes runnable implementation and evaluation benchmarks
-- **Security-First**: Zero-trust architecture with secure-by-design patterns throughout
+- **Security-First**: Secure-by-design patterns throughout
 
 ##  Quick Start
 
