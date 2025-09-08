@@ -8,6 +8,18 @@ This module motivates the paradigm shift from traditional LLM post-training (tre
 - **Emergent Capabilities**: Planning, tool use, memory, and reasoning emerge from RL optimization rather than hand-crafted heuristics
 - **Research Scope**: 500+ papers surveyed, focusing on RL-empowered agentic behaviors, not traditional alignment
 
+## 🛠️ Prerequisites
+
+```bash
+# Verify conceptual prerequisites
+echo "Do you understand basic LLM concepts? (transformers, attention)"
+echo "Are you familiar with reinforcement learning basics? (MDP, rewards)"
+echo "Do you have Python + ML library experience? (torch, transformers)"
+
+# Technical setup check
+python -c "import torch, transformers, gymnasium; print('✅ Core libraries ready')"
+```
+
 ##  Quick Start: Understanding the Shift
 
 ### Traditional LLM (Passive Generation)
@@ -21,6 +33,7 @@ def traditional_llm(prompt):
 response = traditional_llm("What's the weather like?")
 print(response)  # Generic response, no actual weather data
 ```
+
 
 ### Agentic LLM (Active Decision-Making)
 ```python
@@ -140,17 +153,6 @@ This introduction sets the foundation for:
 | 5. Systems | Environments & frameworks | Infrastructure mastery |
 | 6. Challenges | Scaling, trust, safety | Research frontiers |
 
-## 🛠️ Prerequisites
-
-```bash
-# Verify conceptual prerequisites
-echo "Do you understand basic LLM concepts? (transformers, attention)"
-echo "Are you familiar with reinforcement learning basics? (MDP, rewards)"
-echo "Do you have Python + ML library experience? (torch, transformers)"
-
-# Technical setup check
-python -c "import torch, transformers, gymnasium; print('✅ Core libraries ready')"
-```
 
 ## 📖 Resources
 
