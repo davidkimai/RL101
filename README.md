@@ -1,6 +1,6 @@
 # RL101: Reinforcement Learning 101
 
-A pragmatic, hands-on course transforming Large Language Models from passive sequence generators into autonomous decision-making agents. Based on [**"The Landscape of Agentic Reinforcement Learning for LLMs: A Survey" (arXiv:2509.02547)**](https://arxiv.org/abs/2509.02547), this course bridges theory to implementation with runnable code, practical examples, and industry-standard security practices.
+A pragmatic, hands-on course covering the transformation of Large Language Models from passive sequence generators into autonomous decision-making agents. Based on [**"The Landscape of Agentic Reinforcement Learning for LLMs: A Survey" (arXiv:2509.02547)**](https://arxiv.org/abs/2509.02547), this course bridges theory to implementation with runnable code, practical examples, and industry-standard security practices.
 
 ##  Key Takeaways
 - **Paradigm Shift**: From single-step preference-based reinforcement fine-tuning (PBRFT) to multi-step agent training (Agentic RL)
