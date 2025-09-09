@@ -2,6 +2,12 @@
 
 A pragmatic, hands-on course covering the transformation of Large Language Models from passive sequence generators into autonomous decision-making agents. Based on [**"The Landscape of Agentic Reinforcement Learning for LLMs: A Survey" (arXiv:2509.02547)**](https://arxiv.org/abs/2509.02547), this course bridges theory to implementation with runnable code [**(Use with Google Colab or Jupyter Notebooks)**](https://colab.research.google.com/), practical examples, and industry-standard security practices.
 
+<div align="center">
+
+https://github.com/user-attachments/assets/febc2bce-0f08-43aa-bedf-a36e630da70d
+    
+</div>
+
 ##  Key Takeaways
 - **Paradigm Shift**: From single-step preference-based reinforcement fine-tuning (PBRFT) to multi-step agent training (Agentic RL)
 - **Technical Foundation**: Partially observable Markov Decision Process (POMDP) formalism enables planning, tool use, memory, and self-improvement
